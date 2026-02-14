@@ -236,13 +236,13 @@ export const GoeyToast: FC<GoeyToastProps> = ({
     const rightSide = pos?.includes('right') ?? false
     pathRef.current?.setAttribute('d', morphPath(p, b, h, t))
 
-    // Header squish: scale down at start of morph, ease back to 1
+    // Header squish: scale down when expanded, return to normal on collapse
     if (headerRef.current) {
-      if (t > 0 && t < 1) {
-        // Quick squish that recovers by t≈0.4
-        const squish = Math.min(t / 0.4, 1)
-        const scale = 0.88 + 0.12 * squish
-        const pushY = (1 - squish) * 2
+      if (t > 0) {
+        // Squish proportional to morph progress — stays squished while open
+        const squish = Math.min(t / 0.3, 1)
+        const scale = 1 - 0.05 * squish
+        const pushY = squish * 1
         headerRef.current.style.transform = `scale(${scale}) translateY(${pushY}px)`
         headerRef.current.style.transition = 'none'
       } else {
