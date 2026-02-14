@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, type FC, type ReactNode } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, type FC, type ReactNode } from 'react'
 import { motion, AnimatePresence, animate } from 'framer-motion'
 import type { GoeyToastAction, GoeyToastPhase, GoeyToastType } from '../types'
 import { SuccessIcon, ErrorIcon, WarningIcon, InfoIcon, SpinnerIcon } from '../icons'
@@ -82,14 +82,26 @@ export const GoeyToast: FC<GoeyToastProps> = ({
   icon,
   phase,
 }) => {
-  const isLoading = phase === 'loading'
-  const hasDescription = Boolean(description)
-  const hasAction = Boolean(action)
+  // Action success override state
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const collapsingRef = useRef(false)
+  const expandedDimsRef = useRef({ pw: 0, bw: 0, th: 0 })
+
+  // Effective values (overridden when action success is active)
+  const effectiveTitle = actionSuccess ?? title
+  const effectivePhase: GoeyToastPhase = actionSuccess ? 'success' : phase
+  const effectiveDescription = actionSuccess ? undefined : description
+  const effectiveAction = actionSuccess ? undefined : action
+
+  const isLoading = effectivePhase === 'loading'
+  const hasDescription = Boolean(effectiveDescription)
+  const hasAction = Boolean(effectiveAction)
   const isExpanded = hasDescription || hasAction
 
   const [showBody, setShowBody] = useState(false)
 
   // DOM refs
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const pathRef = useRef<SVGPathElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -107,28 +119,88 @@ export const GoeyToast: FC<GoeyToastProps> = ({
   const [dims, setDims] = useState({ pw: 0, bw: 0, th: 0 })
   useEffect(() => { dimsRef.current = dims }, [dims])
 
-  // Push current animated state to SVG DOM
+  // Push current animated state to SVG DOM + constrain wrapper/content
   const flush = useCallback(() => {
     const { pw: p, bw: b, th: h } = aDims.current
     if (p <= 0 || b <= 0 || h <= 0) return
-    pathRef.current?.setAttribute('d', morphPath(p, b, h, morphTRef.current))
-  }, [])
+    const t = morphTRef.current
+    pathRef.current?.setAttribute('d', morphPath(p, b, h, t))
 
-  // Measure content dimensions
-  const measure = useCallback(() => {
-    if (headerRef.current && contentRef.current) {
-      const pw = headerRef.current.offsetWidth + 28
-      const bw = contentRef.current.offsetWidth
-      const th = contentRef.current.offsetHeight
-      setDims({ pw, bw, th })
+    if (t >= 1) {
+      // Fully expanded: clear all constraints
+      if (wrapperRef.current) {
+        wrapperRef.current.style.width = ''
+        wrapperRef.current.style.height = ''
+      }
+      if (contentRef.current) {
+        contentRef.current.style.width = ''
+        contentRef.current.style.overflow = ''
+        contentRef.current.style.maxHeight = ''
+        contentRef.current.style.clipPath = ''
+      }
+    } else if (t > 0) {
+      // Morphing: lock content at final width + clip-path (prevents text reflow)
+      const pillW = Math.min(p, b)
+      const currentW = pillW + (b - pillW) * t
+      const currentH = PH + (h - PH) * t
+      if (wrapperRef.current) {
+        wrapperRef.current.style.width = currentW + 'px'
+        wrapperRef.current.style.height = currentH + 'px'
+      }
+      if (contentRef.current) {
+        contentRef.current.style.width = b + 'px'
+        contentRef.current.style.overflow = ''
+        contentRef.current.style.maxHeight = ''
+        contentRef.current.style.clipPath = `inset(0 ${b - currentW}px ${h - currentH}px 0)`
+      }
+    } else {
+      // Compact: constrain to pill dimensions
+      const pillW = Math.min(p, b)
+      if (wrapperRef.current) {
+        wrapperRef.current.style.width = pillW + 'px'
+        wrapperRef.current.style.height = PH + 'px'
+      }
+      if (contentRef.current) {
+        contentRef.current.style.width = ''
+        contentRef.current.style.overflow = 'hidden'
+        contentRef.current.style.maxHeight = PH + 'px'
+        contentRef.current.style.clipPath = ''
+      }
     }
   }, [])
 
-  useEffect(() => {
+  // Measure content dimensions (clear all constraints first for accurate reading)
+  const measure = useCallback(() => {
+    if (!headerRef.current || !contentRef.current) return
+    const wr = wrapperRef.current
+    const savedW = wr?.style.width ?? ''
+    const savedH = wr?.style.height ?? ''
+    const savedOv = contentRef.current.style.overflow
+    const savedMH = contentRef.current.style.maxHeight
+    const savedCW = contentRef.current.style.width
+    if (wr) { wr.style.width = ''; wr.style.height = '' }
+    contentRef.current.style.overflow = ''
+    contentRef.current.style.maxHeight = ''
+    contentRef.current.style.width = ''
+
+    const pw = headerRef.current.offsetWidth + 28
+    const bw = contentRef.current.offsetWidth
+    const th = contentRef.current.offsetHeight
+
+    if (wr) { wr.style.width = savedW; wr.style.height = savedH }
+    contentRef.current.style.overflow = savedOv
+    contentRef.current.style.maxHeight = savedMH
+    contentRef.current.style.width = savedCW
+
+    setDims({ pw, bw, th })
+  }, [])
+
+  // Measure on prop changes (useLayoutEffect prevents flash of unconstrained content)
+  useLayoutEffect(() => {
     measure()
     const t = setTimeout(measure, 100)
     return () => clearTimeout(t)
-  }, [title, phase, isExpanded, showBody, description, action, measure])
+  }, [effectiveTitle, effectivePhase, isExpanded, showBody, effectiveDescription, effectiveAction, measure])
 
   useEffect(() => {
     if (!contentRef.current) return
@@ -141,8 +213,8 @@ export const GoeyToast: FC<GoeyToastProps> = ({
   const hasDims = pw > 0 && bw > 0 && th > 0
 
   // Handle dims changes: pill resize animation (compact) or direct update (expanded)
-  useEffect(() => {
-    if (!hasDims) return
+  useLayoutEffect(() => {
+    if (!hasDims || collapsingRef.current) return
 
     const prev = { ...aDims.current }
     const target = { pw, bw, th }
@@ -186,15 +258,42 @@ export const GoeyToast: FC<GoeyToastProps> = ({
     })
   }, [pw, bw, th, hasDims, showBody, flush])
 
-  // Phase 1: delay showBody
+  // Phase 1: expand (delay showBody) or collapse (reverse morph)
   useEffect(() => {
     if (isExpanded) {
       const t1 = setTimeout(() => setShowBody(true), 350)
       return () => clearTimeout(t1)
     }
+
+    morphCtrl.current?.stop()
+    pillResizeCtrl.current?.stop()
+
+    // Reverse morph if currently expanded
+    if (morphTRef.current > 0) {
+      const savedDims = expandedDimsRef.current.bw > 0
+        ? { ...expandedDimsRef.current }
+        : { ...aDims.current }
+
+      morphCtrl.current = animate(morphTRef.current, 0, {
+        duration: 0.4,
+        ease: [0.4, 0, 0.2, 1],
+        onUpdate: (t) => {
+          morphTRef.current = t
+          aDims.current = savedDims
+          flush()
+        },
+        onComplete: () => {
+          morphTRef.current = 0
+          collapsingRef.current = false
+          setShowBody(false)
+          flush()
+        },
+      })
+      return () => { morphCtrl.current?.stop() }
+    }
+
     setShowBody(false)
     morphTRef.current = 0
-    morphCtrl.current?.stop()
     flush()
   }, [isExpanded, flush])
 
@@ -228,10 +327,22 @@ export const GoeyToast: FC<GoeyToastProps> = ({
     }
   }, [showBody, flush])
 
+  // Action button handler
+  const handleActionClick = useCallback(() => {
+    if (!effectiveAction) return
+    effectiveAction.onClick()
+    if (effectiveAction.successLabel) {
+      // Save expanded dims synchronously before React re-renders
+      expandedDimsRef.current = { ...aDims.current }
+      collapsingRef.current = true
+      setActionSuccess(effectiveAction.successLabel)
+    }
+  }, [effectiveAction])
+
   const renderIcon = () => {
-    if (icon) return icon
+    if (!actionSuccess && icon) return icon
     if (isLoading) return <SpinnerIcon size={18} />
-    const IconComponent = phaseIconMap[phase]
+    const IconComponent = phaseIconMap[effectivePhase]
     return <IconComponent size={18} />
   }
 
@@ -240,7 +351,7 @@ export const GoeyToast: FC<GoeyToastProps> = ({
       <div className={styles.iconWrapper}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={isLoading ? 'spinner' : phase}
+            key={isLoading ? 'spinner' : effectivePhase}
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
@@ -250,13 +361,13 @@ export const GoeyToast: FC<GoeyToastProps> = ({
           </motion.div>
         </AnimatePresence>
       </div>
-      <span className={styles.title}>{title}</span>
+      <span className={styles.title}>{effectiveTitle}</span>
     </>
   )
 
   return (
-    <div className={styles.wrapper}>
-      {/* SVG background — fixed viewport, overflow visible, path controls shape */}
+    <div ref={wrapperRef} className={styles.wrapper}>
+      {/* SVG background — overflow visible, path controls shape */}
       <svg
         className={styles.blobSvg}
         aria-hidden
@@ -269,7 +380,7 @@ export const GoeyToast: FC<GoeyToastProps> = ({
         ref={contentRef}
         className={`${styles.content} ${showBody ? styles.contentExpanded : styles.contentCompact}`}
       >
-        <div ref={headerRef} className={`${styles.header} ${titleColorMap[phase]}`}>
+        <div ref={headerRef} className={`${styles.header} ${titleColorMap[effectivePhase]}`}>
           {iconAndTitle}
         </div>
 
@@ -278,32 +389,32 @@ export const GoeyToast: FC<GoeyToastProps> = ({
             <motion.div
               key="description"
               className={styles.description}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
             >
-              {description}
+              {effectiveDescription}
             </motion.div>
           )}
         </AnimatePresence>
 
         <AnimatePresence>
-          {showBody && hasAction && action && (
+          {showBody && hasAction && effectiveAction && (
             <motion.div
               key="action"
               className={styles.actionWrapper}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1], delay: 0.1 }}
             >
               <button
                 className={styles.actionButton}
-                onClick={action.onClick}
+                onClick={handleActionClick}
                 type="button"
               >
-                {action.label}
+                {effectiveAction.label}
               </button>
             </motion.div>
           )}

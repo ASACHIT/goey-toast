@@ -6,6 +6,7 @@ export type GoeyToastType = 'success' | 'error' | 'warning' | 'info'
 export interface GoeyToastAction {
   label: string
   onClick: () => void
+  successLabel?: string
 }
 
 export interface GoeyToastData {

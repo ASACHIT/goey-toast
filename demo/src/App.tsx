@@ -79,6 +79,20 @@ function App() {
             >
               Error + Action
             </button>
+            <button
+              onClick={() =>
+                goeyToast.info('Share link ready', {
+                  description: 'Your share link has been generated and is ready to copy.',
+                  action: {
+                    label: 'Copy to Clipboard',
+                    onClick: () => navigator.clipboard.writeText('https://example.com/share/abc123'),
+                    successLabel: 'Copied!',
+                  },
+                })
+              }
+            >
+              Action → Success Pill
+            </button>
           </div>
         </div>
 

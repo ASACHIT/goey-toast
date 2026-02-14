@@ -127,7 +127,7 @@ describe('GoeyToast component', () => {
       />
     )
     expect(screen.getByText('Loading...')).toBeInTheDocument()
-    const svg = container.querySelector('svg')!
+    const svg = container.querySelector('svg[stroke="currentColor"]')!
     expect(svg).toBeInTheDocument()
     expect(svg.getAttribute('stroke')).toBe('currentColor')
   })
