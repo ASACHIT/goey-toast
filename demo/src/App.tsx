@@ -232,7 +232,7 @@ function App() {
           </nav>
 
           <div className="header-icons">
-            <a href="https://github.com/freddy/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link" aria-label="GitHub">
+            <a href="https://github.com/anl331/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link" aria-label="GitHub">
               <GithubIcon size={18} />
             </a>
             <a href="https://www.npmjs.com/package/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link" aria-label="npm">
@@ -253,7 +253,7 @@ function App() {
             <button className={`mobile-menu-link${page === 'changelog' ? ' mobile-menu-link--active' : ''}`} onClick={() => { setPage('changelog'); setMobileMenuOpen(false) }}>Changelog</button>
             <div className="mobile-menu-divider" />
             <div className="mobile-menu-icons">
-              <a href="https://github.com/freddy/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link">
+              <a href="https://github.com/anl331/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link">
                 <GithubIcon size={18} /> GitHub
               </a>
               <a href="https://www.npmjs.com/package/goey-toast" target="_blank" rel="noopener noreferrer" className="header-icon-link">
