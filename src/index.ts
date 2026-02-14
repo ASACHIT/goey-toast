@@ -1,3 +1,4 @@
+import './components/GoeyToast.css'
 export { GoeyToaster } from './components/GoeyToaster'
 export { goeyToast } from './goey-toast'
 export type {

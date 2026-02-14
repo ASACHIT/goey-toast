@@ -4,7 +4,7 @@ import type { GoeyToastAction, GoeyToastClassNames, GoeyToastPhase, GoeyToastTim
 import { getGoeyPosition } from '../context'
 import { DefaultIcon, SuccessIcon, ErrorIcon, WarningIcon, InfoIcon, SpinnerIcon } from '../icons'
 import { usePrefersReducedMotion } from '../usePrefersReducedMotion'
-import styles from './GoeyToast.module.css'
+import { styles } from './goey-styles'
 
 export interface GoeyToastProps {
   title: string
