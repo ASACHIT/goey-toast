@@ -197,6 +197,7 @@ export const GoeyToast: FC<GoeyToastProps> = ({
   const [dismissing, setDismissing] = useState(false)
   const collapsingRef = useRef(false)
   const preDismissRef = useRef(false)
+  const collapseEndTime = useRef(0)
   const expandedDimsRef = useRef({ pw: 0, bw: 0, th: 0 })
 
   // Effective values (overridden when action success is active)
@@ -337,59 +338,6 @@ export const GoeyToast: FC<GoeyToastProps> = ({
   const { pw, bw, th } = dims
   const hasDims = pw > 0 && bw > 0 && th > 0
 
-  // Handle dims changes: pill resize animation (compact) or direct update (expanded)
-  useLayoutEffect(() => {
-    if (!hasDims || collapsingRef.current) return
-
-    const prev = { ...aDims.current }
-    const target = { pw, bw, th }
-
-    // First render — set immediately
-    if (prev.bw <= 0) {
-      aDims.current = target
-      flush()
-      return
-    }
-
-    // During morph animation — just update target dims, morph callback reads them
-    if (morphTRef.current > 0 && morphTRef.current < 1) {
-      aDims.current = target
-      flush()
-      return
-    }
-
-    // Expanded and settled (morph done) — update immediately
-    if (showBody) {
-      aDims.current = target
-      flush()
-      return
-    }
-
-    // Compact mode: animate pill resize smoothly
-    if (prev.bw === target.bw && prev.pw === target.pw && prev.th === target.th) return
-
-    if (prefersReducedMotion) {
-      aDims.current = target
-      flush()
-      return
-    }
-
-    pillResizeCtrl.current?.stop()
-    pillResizeCtrl.current = animate(0, 1, {
-      type: 'spring',
-      duration: 0.6,
-      bounce: 0.2,
-      onUpdate: (t) => {
-        aDims.current = {
-          pw: prev.pw + (target.pw - prev.pw) * t,
-          bw: prev.bw + (target.bw - prev.bw) * t,
-          th: prev.th + (target.th - prev.th) * t,
-        }
-        flush()
-      },
-    })
-  }, [pw, bw, th, hasDims, showBody, flush, prefersReducedMotion])
-
   // Squish animation controller (shared between landing + blob squish)
   const blobSquishCtrl = useRef<ReturnType<typeof animate> | null>(null)
 
@@ -428,6 +376,62 @@ export const GoeyToast: FC<GoeyToastProps> = ({
     })
   }, [prefersReducedMotion, expandDur, collapseDur])
 
+  // Handle dims changes: pill resize animation (compact) or direct update (expanded)
+  useLayoutEffect(() => {
+    if (!hasDims || collapsingRef.current) return
+
+    const prev = { ...aDims.current }
+    const target = { pw, bw, th }
+
+    // First render — set immediately
+    if (prev.bw <= 0) {
+      aDims.current = target
+      flush()
+      return
+    }
+
+    // During morph animation — just update target dims, morph callback reads them
+    if (morphTRef.current > 0 && morphTRef.current < 1) {
+      aDims.current = target
+      flush()
+      return
+    }
+
+    // Expanded and settled (morph done) — update immediately
+    if (showBody) {
+      aDims.current = target
+      flush()
+      return
+    }
+
+    // Compact mode: animate pill resize smoothly
+    if (prev.bw === target.bw && prev.pw === target.pw && prev.th === target.th) return
+
+    if (prefersReducedMotion) {
+      aDims.current = target
+      flush()
+      return
+    }
+
+    pillResizeCtrl.current?.stop()
+    // Fire vertical squish alongside the horizontal resize — skip if recently collapsed
+    if (Date.now() - collapseEndTime.current > 500) {
+      triggerLandingSquish('expand')
+    }
+    pillResizeCtrl.current = animate(0, 1, {
+      type: 'spring',
+      duration: 0.5,
+      bounce: 0.35,
+      onUpdate: (t) => {
+        aDims.current = {
+          pw: prev.pw + (target.pw - prev.pw) * t,
+          bw: prev.bw + (target.bw - prev.bw) * t,
+          th: prev.th + (target.th - prev.th) * t,
+        }
+        flush()
+      },
+    })
+  }, [pw, bw, th, hasDims, showBody, flush, prefersReducedMotion, triggerLandingSquish])
 
   // Squish on entry: only for simple toasts (no body text) — expanded toasts get squish from showBody
   const expandDelayMs = prefersReducedMotion ? 0 : (timing?.expandDelay ?? 330)
@@ -448,6 +452,31 @@ export const GoeyToast: FC<GoeyToastProps> = ({
     }
     prevShowBody.current = showBody
   }, [showBody, triggerLandingSquish])
+
+  // Error shake: quick horizontal shake when phase transitions to error (not during dismiss)
+  const shakeCtrl = useRef<ReturnType<typeof animate> | null>(null)
+  const prevPhase = useRef(phase)
+  useEffect(() => {
+    if (phase === 'error' && prevPhase.current !== 'error' && !dismissing && wrapperRef.current && !prefersReducedMotion) {
+      shakeCtrl.current?.stop()
+      const el = wrapperRef.current
+      const mirror = el.style.transform?.includes('scaleX(-1)') ? 'scaleX(-1) ' : ''
+      shakeCtrl.current = animate(0, 1, {
+        duration: 0.4,
+        ease: 'easeOut',
+        onUpdate: (v) => {
+          const decay = 1 - v
+          const shake = Math.sin(v * Math.PI * 6) * decay * 3
+          el.style.transform = mirror + `translateX(${shake}px)`
+        },
+        onComplete: () => {
+          el.style.transform = mirror.trim() || ''
+        },
+      })
+    }
+    prevPhase.current = phase
+    return () => { shakeCtrl.current?.stop() }
+  }, [phase, dismissing, prefersReducedMotion])
 
   // Phase 1: expand (delay showBody) or collapse (reverse morph)
   useEffect(() => {
@@ -506,6 +535,7 @@ export const GoeyToast: FC<GoeyToastProps> = ({
           morphTRef.current = 0
           collapsingRef.current = false
           preDismissRef.current = false
+          collapseEndTime.current = Date.now()
           aDims.current = { ...targetDims }
           flush()
           setShowBody(false)
