@@ -119,7 +119,8 @@ Fine-tune animation speeds per toast.
 
 | Property           | Type     | Default | Description                          |
 | ------------------ | -------- | ------- | ------------------------------------ |
-| `expandDelay`      | `number` | 330     | Milliseconds before expand starts    |
+| `squishDelay`      | `number` | 45      | Milliseconds before squish (simple toast, no description) |
+| `expandDelay`      | `number` | 330     | Milliseconds before expand starts (toast with description) |
 | `expandDuration`   | `number` | 0.9     | Seconds for pill-to-blob morph       |
 | `collapseDuration` | `number` | 0.9     | Seconds for blob-to-pill morph       |
 | `displayDuration`  | `number` | 4000    | Milliseconds toast stays expanded    |
